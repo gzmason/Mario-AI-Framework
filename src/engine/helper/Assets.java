@@ -53,6 +53,8 @@ public class Assets {
         if (source == null) {
             imageName = img + imageName;
             File file = new File(imageName);
+            
+            System.out.println(imageName);
             source = ImageIO.read(file);
         }
         if (source == null) {

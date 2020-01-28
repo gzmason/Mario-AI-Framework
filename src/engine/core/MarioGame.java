@@ -205,6 +205,7 @@ public class MarioGame {
      */
     public MarioResult runGame(MarioAgent agent, String level, int timer, int marioState, boolean visuals, int fps, float scale) {
         if (visuals) {
+        	System.out.println("hi");
             this.window = new JFrame("Mario AI Framework");
             this.render = new MarioRender(scale);
             this.window.setContentPane(this.render);
