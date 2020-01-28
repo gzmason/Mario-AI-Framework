@@ -6,6 +6,8 @@ RecordFrequency=5
 
 PopulationSize=4
 
+Algorithm="ISOLineDD"
+
 [LogPaths]
 fail_map="fail_map"
 success_map="success_map"
@@ -53,4 +55,10 @@ MutationPower=0.5
 StartResolution = 60
 EndResolution = 60
 MutationPower=0.5
+InitialPopulation=10
+
+StartResolution = 60
+EndResolution = 60
+MutationPower1=0.01
+MutationPower2=0.2
 InitialPopulation=10
