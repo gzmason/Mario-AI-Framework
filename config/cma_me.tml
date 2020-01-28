@@ -57,6 +57,8 @@ EndResolution = 60
 MutationPower=0.5
 InitialPopulation=10
 
+
+[ISOLineDDSetting]
 StartResolution = 60
 EndResolution = 60
 MutationPower1=0.01
