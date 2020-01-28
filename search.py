@@ -141,7 +141,7 @@ def to_level(number_level):
     result = []
     number_level=eval(number_level)
     for x in number_level:
-        print(x)
+        #print(x)
         result.append(''.join(get_char(y) for y in x)+'\n')
     result= ''.join(result)
     return result
@@ -164,7 +164,7 @@ def eval_mario(ind):
     agent = Agent()
     game = MarioGame()
     result = game.runGame(agent, realLevel, 20, 0, True)
-    print(result)
+    #print(result)
     messageReceived=str(result.getCompletionPercentage())+","
     messageReceived+=str(result.getNumJumps())+","
     messageReceived+=str(result.getKillsTotal())+","
@@ -259,16 +259,10 @@ class DecompMatrix:
 
 class CMA_ES_Algorithm:
 
-    def __init__(self, num_parents, population_size, mutation_power, num_to_evaluate):
-        if population_size == None:
-            self.population_size = int(4.0+math.floor(3.0*math.log(num_params)))
-        else:
-            self.population_size = population_size
-
-        if num_parents == None:
-            self.num_parents = population_size // 2
-        else:
-            self.num_parents = num_parents
+    def __init__(self, num_to_evaluate,mutation_power):
+        self.population_size=parsed_toml["PopulationSize"]
+        self.num_parents = self.population_size // 2
+        
         
         self.mutation_power = mutation_power
         self.num_to_evaluate = num_to_evaluate
@@ -276,6 +270,8 @@ class CMA_ES_Algorithm:
 
         self.mean = np.asarray([0.0] * num_params)
         self.population = []
+        
+        self.successful_individuals=[]
 
         # Setup recombination weights
         self.weights = [math.log(self.num_parents + 0.5) \
@@ -362,19 +358,21 @@ class CMA_ES_Algorithm:
         cn, sum_square_ps = self.cs / self.damps, sum(x**2 for x in self.ps)
         self.mutation_power *= math.exp(min(1, cn * (sum_square_ps / num_params - 1) / 2))
 
-        # Visualize this generation
-        image_path = os.path.join('images', 'gen_{0:03d}.png'.format(self.individuals_evaluated // self.population_size))
+        # Visualize current generation
+        for cur in self.population:
+            if(cur.fitness==1.0):
+                self.successful_individuals.append(cur)
+        image_path = os.path.join('cmaes_map', 'gen_{0:03d}.png'.format(self.individuals_evaluated // self.population_size))
         #print(image_path)
-        pts = make_record_frame([x.features+(x.fitness,) for x in self.population])
+        pts = make_record_frame([x.features+(x.fitness,) for x in self.successful_individuals])
         create_image(pts, image_path)
 
         # Reset the population
         self.population.clear()
 
-def run_cma_es(num_generations, num_parents=None, population_size=None, mutation_power=0.3):
+def run_cma_es(num_to_evaluate, mutation_power):
 
-    num_to_evaluate = population_size * num_generations
-    cmaes = CMA_ES_Algorithm(num_parents, population_size, mutation_power, num_to_evaluate)
+    cmaes = CMA_ES_Algorithm(num_to_evaluate,mutation_power)
 
     while cmaes.is_running():
         ind = cmaes.generate_individual()
@@ -516,10 +514,10 @@ class ImprovementEmitter:
         unscaled_params = self.mean + np.array(unscaled_params)
         ind = Individual()
         ind.param_vector = unscaled_params
-        print(ind.param_vector)
+        #print(ind.param_vector)
         level,num_non_empty,num_enemies=gan_generate(ind.param_vector)
         ind.level=level
-        print(level)
+        #print(level)
         #sys.stdout.flush()
         ind.emitter_name="ImprovementEmitter"
 
@@ -838,7 +836,7 @@ class OptimizingEmitter:
 
         level,num_non_empty,num_enemies=gan_generate(ind.param_vector)
         ind.level=level
-        print(level)
+        #print(level)
         #sys.stdout.flush()
 
         #half = len(ind.param_vector) // 2
@@ -1052,7 +1050,7 @@ def run_cma_me(num_to_evaluate, mutation_power=parsed_toml["CMAMESetting"]["Muta
         else:
             elites.remove(elite)
     
-    image_path = os.path.join('success_map', str(len(elites))+'cells.png')
+    image_path = os.path.join(success_map, str(len(elites))+'cells.png')
     if(len(elites)!=0):
         #pts = make_record_frame([x.features+(x.fitness,) for x in elites])
         #print(image_path, len(elites) / (self.feature_map.resolutions[-1] ** 2), total_fitness)
@@ -1077,7 +1075,7 @@ class MapElitesAlgorithm:
         self.feature_map = feature_map
         self.failed_map=failed_map
         self.mutation_power = mutation_power
-        self.allRecords=pd.DataFrame(columns=['emitterName','latentVector', 'jumpActionsPerformed', 'killsTotal','livesLeft','coinsCollected','timeSpent','totalActions','totalFrames','distancePassed','jumpFraction','behavior feature X','behavior feature Y'])
+        self.allRecords=pd.DataFrame(columns=['emitterName','latentVector', 'completionPercentage','jumpActionsPerformed','killsTotal','livesLeft','coinsCollected','remainingTime (20-timeSpent)','behavior feature X','behavior feature Y'])
         
     def is_running(self):
         return self.individuals_evaluated < self.num_to_evaluate
@@ -1097,7 +1095,7 @@ class MapElitesAlgorithm:
 
         level,num_non_empty,num_enemies=gan_generate(ind.param_vector)
         ind.level=level
-        print(level)
+        #print(level)
         #sys.stdout.flush()
 
         #half = len(ind.param_vector) // 2
@@ -1110,7 +1108,7 @@ class MapElitesAlgorithm:
         ind.make_features() #now this does nothing
         ind.ID = self.individuals_evaluated
         self.individuals_evaluated += 1
-        if int(ind.statsList[2])<1024 or ind.fitness>100:
+        if  ind.fitness<1.0:
             self.failed_map.add(ind)
         else:
             self.feature_map.add(ind)
@@ -1123,7 +1121,7 @@ class MapElitesAlgorithm:
         RecordFrequency=parsed_toml["RecordFrequency"]
         if self.individuals_evaluated % RecordFrequency == 0:
             #show the map of success levels
-            image_path = os.path.join('success_map', 'gen_{0:03d}.png'.format(self.individuals_evaluated // RecordFrequency))
+            image_path = os.path.join(success_map, 'gen_{0:03d}.png'.format(self.individuals_evaluated // RecordFrequency))
             elites = [self.feature_map.elite_map[x] for x in self.feature_map.elite_map]
             if(len(elites)!=0):
                 pts = make_record_frame([x.features+(x.fitness,) for x in elites])
@@ -1131,7 +1129,7 @@ class MapElitesAlgorithm:
                 create_image(pts, image_path)
 
             #show the map of failed levels
-            image_path = os.path.join('fail_map', 'gen_{0:03d}.png'.format(self.individuals_evaluated // RecordFrequency))
+            image_path = os.path.join(fail_map, 'gen_{0:03d}.png'.format(self.individuals_evaluated // RecordFrequency))
             elites = [self.failed_map.elite_map[x] for x in self.failed_map.elite_map]
             if(len(elites)!=0):
                 pts = make_record_frame([x.features+(x.fitness,) for x in elites])
@@ -1185,7 +1183,7 @@ def run_map_elites(num_to_evaluate, initial_population, mutation_power=parsed_to
         else:
             elites.remove(elite)
     
-    image_path = os.path.join('success_map', str(len(elites))+'cells.png')
+    image_path = os.path.join(success_map, str(len(elites))+'cells.png')
     if(len(elites)!=0):
         #pts = make_record_frame([x.features+(x.fitness,) for x in elites])
         #print(image_path, len(elites) / (self.feature_map.resolutions[-1] ** 2), total_fitness)
@@ -1205,10 +1203,10 @@ def run_map_elites(num_to_evaluate, initial_population, mutation_power=parsed_to
 if __name__ == '__main__':
     print("READY") # Java loops until it sees this special signal
     #sys.stdout.flush() # Make sure Java can sense this output before Python blocks waiting for input 
-    #run_cma_es(100, num_parents=250, population_size=500, mutation_power=0.8)
     NumSimulations=parsed_toml["NumSimulations"]
-    run_cma_me(NumSimulations, mutation_power=parsed_toml["CMAMESetting"]["MutationPower"])
-    #run_map_elites(NumSimulations,initial_population=parsed_toml["MAPEliteSetting"]["InitialPopulation"],mutation_power=parsed_toml["MAPEliteSetting"]["MutationPower"])
+    #run_cma_es(NumSimulations,mutation_power=parsed_toml["CMAMESetting"]["MutationPower"])
+    #run_cma_me(NumSimulations, mutation_power=parsed_toml["CMAMESetting"]["MutationPower"])
+    run_map_elites(NumSimulations,initial_population=parsed_toml["MAPEliteSetting"]["InitialPopulation"],mutation_power=parsed_toml["MAPEliteSetting"]["MutationPower"])
     print("saved")
     #sys.stdout.flush()
     #run_map_elites(50000, 100, mutation_power=0.3)

@@ -61,7 +61,7 @@ cudnn.benchmark = True
 if torch.cuda.is_available() and not opt.cuda:
     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
-map_size = 32
+map_size = 64
 
 if opt.json is None:
     if opt.problem == 0:

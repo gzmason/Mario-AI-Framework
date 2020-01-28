@@ -4,7 +4,7 @@ NumSimulations=20
 
 RecordFrequency=5
 
-PopulationSize=5
+PopulationSize=4
 
 [LogPaths]
 fail_map="fail_map"
