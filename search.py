@@ -48,12 +48,9 @@ Agent = autoclass('agents.robinBaumgarten.Agent')
 
 parsed_toml = toml.load("./config/cma_me.tml")
 
-fail_map=parsed_toml["LogPaths"]["fail_map"]
 success_map=parsed_toml["LogPaths"]["success_map"]
 records=parsed_toml["LogPaths"]["recordsCSV"]
 
-if not os.path.exists(fail_map):
-    os.mkdir(fail_map)
 if not os.path.exists(success_map):
     os.mkdir(success_map)
 if not os.path.exists(records):
@@ -259,11 +256,11 @@ class DecompMatrix:
 
 class CMA_ES_Algorithm:
 
-    def __init__(self, num_to_evaluate,mutation_power):
+    def __init__(self, num_to_evaluate,mutation_power,feature_map):
         self.population_size=parsed_toml["PopulationSize"]
         self.num_parents = self.population_size // 2
-        
-        
+        self.feature_map=feature_map
+        self.allRecords=pd.DataFrame(columns=['emitterName','latentVector', 'completionPercentage','jumpActionsPerformed','killsTotal','livesLeft','coinsCollected','remainingTime (20-timeSpent)','behavior feature X','behavior feature Y'])
         self.mutation_power = mutation_power
         self.num_to_evaluate = num_to_evaluate
         self.individuals_evaluated = 0
@@ -315,9 +312,40 @@ class CMA_ES_Algorithm:
         ind.make_features()
         ind.ID = self.individuals_evaluated
         self.individuals_evaluated += 1
+        self.allRecords.loc[ind.ID]=["CMA-ES"]+[ind.param_vector]+ind.statsList+[ind.features[0]]+[ind.features[1]]
+
+        RecordFrequency=parsed_toml["RecordFrequency"]
+        if self.individuals_evaluated % RecordFrequency == 0:
+            """
+            #show the map of success levels
+            image_path = os.path.join(success_map, 'gen_{0:03d}.png'.format(self.individuals_evaluated // RecordFrequency))
+            elites = [self.feature_map.elite_map[x] for x in self.feature_map.elite_map]
+            if(len(elites)!=0):
+                pts = make_record_frame([x.features+(x.fitness,) for x in elites])
+                #print(image_path, len(elites) / (self.feature_map.resolutions[-1] ** 2), total_fitness)
+                create_image(pts, image_path)
+
+            """
+
+            elites = [self.feature_map.elite_map[x] for x in self.feature_map.elite_map]
+            if(len(elites)!=0):
+                logFile=open(records+"\\EliteLog.csv","a")
+                rowData=[]
+                for x in elites:
+                    currElite=[x.ID]
+                    currElite+=self.allRecords.loc[x.ID,["emitterName",'completionPercentage',"behavior feature X","behavior feature Y"]].tolist()
+                    rowData.append(currElite)
+                wr = csv.writer(logFile, dialect='excel')
+                wr.writerow(rowData)
+                logFile.close()
+
         self.population.append(ind)
         if len(self.population) < self.population_size:
             return
+
+        for cur in self.population:
+            if(cur.fitness==1.0):
+                self.feature_map.add(cur)
 
         # Sort by fitness
         parents = sorted(self.population, key=lambda x: x.fitness)[::-1]
@@ -358,6 +386,7 @@ class CMA_ES_Algorithm:
         cn, sum_square_ps = self.cs / self.damps, sum(x**2 for x in self.ps)
         self.mutation_power *= math.exp(min(1, cn * (sum_square_ps / num_params - 1) / 2))
 
+        """
         # Visualize current generation
         for cur in self.population:
             if(cur.fitness==1.0):
@@ -366,18 +395,27 @@ class CMA_ES_Algorithm:
         #print(image_path)
         pts = make_record_frame([x.features+(x.fitness,) for x in self.successful_individuals])
         create_image(pts, image_path)
+        """
 
         # Reset the population
         self.population.clear()
 
 def run_cma_es(num_to_evaluate, mutation_power):
 
-    cmaes = CMA_ES_Algorithm(num_to_evaluate,mutation_power)
+    resolution = (parsed_toml["CMAMESetting"]["StartResolution"],parsed_toml["CMAMESetting"]["EndResolution"])
+    #feature_ranges = [(-(num_params*boundary_value//2), num_params*boundary_value//2)] * 2
+    feature_ranges=[(parsed_toml["CMAMESetting"]["X_Low"],parsed_toml["CMAMESetting"]["X_High"]),(parsed_toml["CMAMESetting"]["Y_Low"],parsed_toml["CMAMESetting"]["Y_High"])]
+
+    feature_map = FeatureMap(num_to_evaluate, feature_ranges, resolution)
+    cmaes = CMA_ES_Algorithm(num_to_evaluate,mutation_power,feature_map)
 
     while cmaes.is_running():
         ind = cmaes.generate_individual()
         ind.fitness = evaluate(ind)
         cmaes.return_evaluated_individual(ind)
+    
+    #output all records to csv files
+    cmaes.allRecords.to_csv("records\\AllRecords.csv")
 
 class FeatureMap:
 
@@ -464,7 +502,7 @@ class FeatureMap:
 
 class ImprovementEmitter:
 
-    def __init__(self, mutation_power, feature_map,failed_map):
+    def __init__(self, mutation_power, feature_map):
         #self.population_size = int(4.0+math.floor(3.0*math.log(num_params))) * 2
         self.population_size=parsed_toml["PopulationSize"]
         #print('pop size', self.population_size)
@@ -473,7 +511,6 @@ class ImprovementEmitter:
         
         self.population = []
         self.feature_map = feature_map
-        self.failed_map=failed_map
         self.num_features = len(self.feature_map.feature_ranges)
         #print('num_features', self.num_features)
         
@@ -537,7 +574,6 @@ class ImprovementEmitter:
         parents = []
         for cur in self.population:
             if(cur.fitness<1.0):
-                self.failed_map.add(cur)
                 self.population.remove(cur)
             else:
                 if self.feature_map.add(cur):
@@ -615,7 +651,7 @@ class ImprovementEmitter:
 
 class RandomDirectionEmitter:
 
-    def __init__(self, mutation_power, feature_map,failed_map):
+    def __init__(self, mutation_power, feature_map):
         #self.population_size = int(4.0+math.floor(3.0*math.log(num_params)))
         self.population_size=parsed_toml["PopulationSize"]
         #print('pop size', self.population_size)
@@ -624,7 +660,6 @@ class RandomDirectionEmitter:
         
         self.population = []
         self.feature_map = feature_map
-        self.failed_map=failed_map
         self.num_features = len(self.feature_map.feature_ranges)
         #print('num_features', self.num_features)
         
@@ -691,7 +726,6 @@ class RandomDirectionEmitter:
         parents = []
         for cur in self.population:
             if(cur.fitness<1.0):
-                self.failed_map.add(cur)
                 self.population.remove(cur)
             else:
                 local_map.add(cur)
@@ -779,7 +813,7 @@ class RandomDirectionEmitter:
 
 class OptimizingEmitter:
 
-    def __init__(self, mutation_power, feature_map,failed_map):
+    def __init__(self, mutation_power, feature_map):
         #self.population_size = int(4.0+math.floor(3.0*math.log(num_params))) * 2
         self.population_size=parsed_toml["PopulationSize"]
         #print('pop size', self.population_size)
@@ -788,7 +822,6 @@ class OptimizingEmitter:
         
         self.population = []
         self.feature_map = feature_map
-        self.failed_map=failed_map
         self.num_features = len(self.feature_map.feature_ranges)
         #print('num_features', self.num_features)
         
@@ -854,8 +887,7 @@ class OptimizingEmitter:
         # Continue optimizing if we are improving the map.
         did_improve = True
         for cur in self.population:
-            if(cur.fitness<1.0):
-                self.failed_map.add(cur)
+            if(cur.fitness<1.0):        
                 self.population.remove(cur) #don't let failed levels affect distribution
             else:
                 self.feature_map.add(cur)
@@ -934,26 +966,26 @@ class OptimizingEmitter:
 
 class CMA_ME_Algorithm:
 
-    def __init__(self, mutation_power, num_to_evaluate, feature_map,failed_map):
+    def __init__(self, mutation_power, num_to_evaluate, feature_map):
         self.emitters = []
         self.records=[]
         self.allRecords=pd.DataFrame(columns=['emitterName','latentVector', 'completionPercentage','jumpActionsPerformed','killsTotal','livesLeft','coinsCollected','remainingTime (20-timeSpent)','behavior feature X','behavior feature Y'])
         if parsed_toml["EmitterSelection"]["RandomDirectionEmitter"]:
-            self.emitters += [RandomDirectionEmitter(mutation_power, feature_map,failed_map) for i in range(1)]
+            self.emitters += [RandomDirectionEmitter(mutation_power, feature_map) for i in range(1)]
             self.records+=[pd.DataFrame(columns=['emitterName','latentVector', 'completionPercentage','jumpActionsPerformed','killsTotal','livesLeft','coinsCollected','remainingTime (20-timeSpent)','behavior feature X','behavior feature Y'])]
         
         if parsed_toml["EmitterSelection"]["ImprovementEmitter"]:
-            self.emitters += [ImprovementEmitter(mutation_power, feature_map,failed_map) for i in range(1)]
+            self.emitters += [ImprovementEmitter(mutation_power, feature_map) for i in range(1)]
             self.records+=[pd.DataFrame(columns=['emitterName','latentVector', 'completionPercentage','jumpActionsPerformed','killsTotal','livesLeft','coinsCollected','remainingTime (20-timeSpent)','behavior feature X','behavior feature Y'])]
         
         if parsed_toml["EmitterSelection"]["OptimizingEmitter"]:
-            self.emitters += [OptimizingEmitter(mutation_power, feature_map,failed_map) for i in range(1)]
+            self.emitters += [OptimizingEmitter(mutation_power, feature_map) for i in range(1)]
             self.records+=[pd.DataFrame(columns=['emitterName','latentVector', 'completionPercentage','jumpActionsPerformed','killsTotal','livesLeft','coinsCollected','remainingTime (20-timeSpent)','behavior feature X','behavior feature Y'])]
         
         self.num_to_evaluate = num_to_evaluate
         self.individuals_evaluated = 0
         self.feature_map = feature_map
-        self.failed_map=failed_map
+       
 
     def is_running(self):
         return self.individuals_evaluated < self.num_to_evaluate
@@ -978,9 +1010,12 @@ class CMA_ME_Algorithm:
         self.emitters[ind.emitter_id].return_evaluated_individual(ind)
         self.records[ind.emitter_id].loc[ind.ID]=[ind.emitter_name]+[ind.param_vector]+ind.statsList+[ind.features[0]]+[ind.features[1]]
         self.allRecords.loc[ind.ID]=[ind.emitter_name]+[ind.param_vector]+ind.statsList+[ind.features[0]]+[ind.features[1]]
+        
+        
         # Visualize this generation
         RecordFrequency=parsed_toml["RecordFrequency"]
         if self.individuals_evaluated % RecordFrequency == 0:
+            """
             #show the map of success levels
             image_path = os.path.join(success_map, 'gen_{0:03d}.png'.format(self.individuals_evaluated // RecordFrequency))
             elites = [self.feature_map.elite_map[x] for x in self.feature_map.elite_map]
@@ -989,13 +1024,7 @@ class CMA_ME_Algorithm:
                 #print(image_path, len(elites) / (self.feature_map.resolutions[-1] ** 2), total_fitness)
                 create_image(pts, image_path)
 
-            #show the map of failed levels
-            image_path = os.path.join(fail_map, 'gen_{0:03d}.png'.format(self.individuals_evaluated // RecordFrequency))
-            elites = [self.failed_map.elite_map[x] for x in self.failed_map.elite_map]
-            if(len(elites)!=0):
-                pts = make_record_frame([x.features+(x.fitness,) for x in elites])
-                #print(image_path, len(elites) / (self.feature_map.resolutions[-1] ** 2), total_fitness)
-                create_image(pts, image_path)
+            """
 
             elites = [self.feature_map.elite_map[x] for x in self.feature_map.elite_map]
             if(len(elites)!=0):
@@ -1003,19 +1032,13 @@ class CMA_ME_Algorithm:
                 rowData=[]
                 for x in elites:
                     currElite=[x.ID]
-                    currElite+=self.allRecords.loc[x.ID,["emitterName","jumpActionsPerformed","behavior feature X","behavior feature Y"]].tolist()
+                    currElite+=self.allRecords.loc[x.ID,["emitterName","completionPercentage","behavior feature X","behavior feature Y"]].tolist()
                     rowData.append(currElite)
                 wr = csv.writer(logFile, dialect='excel')
                 wr.writerow(rowData)
                 logFile.close()
 
-                """
-                currElite=pd.DataFrame(columns=['emitterName','latentVector', 'jumpActionsPerformed', 'behavior feature X','behavior feature Y'])
-                for x in elites:
-                    elite=self.allRecords.loc[x.ID,["emitterName","latentVector","jumpActionsPerformed","behavior feature X","behavior feature Y"]]
-                    currElite.loc[x.ID]=elite
-                currElite.to_csv("success_map\\"+str(self.individuals_evaluated)+"Simulations.csv")
-                """
+               
 
 def run_cma_me(num_to_evaluate, mutation_power=parsed_toml["CMAMESetting"]["MutationPower"]):
     resolution = (parsed_toml["CMAMESetting"]["StartResolution"],parsed_toml["CMAMESetting"]["EndResolution"])
@@ -1023,8 +1046,8 @@ def run_cma_me(num_to_evaluate, mutation_power=parsed_toml["CMAMESetting"]["Muta
     feature_ranges=[(parsed_toml["CMAMESetting"]["X_Low"],parsed_toml["CMAMESetting"]["X_High"]),(parsed_toml["CMAMESetting"]["Y_Low"],parsed_toml["CMAMESetting"]["Y_High"])]
 
     feature_map = FeatureMap(num_to_evaluate, feature_ranges, resolution)
-    failed_map=FeatureMap(num_to_evaluate, feature_ranges, resolution)
-    cma_me = CMA_ME_Algorithm(mutation_power, num_to_evaluate, feature_map,failed_map)
+    
+    cma_me = CMA_ME_Algorithm(mutation_power, num_to_evaluate, feature_map)
 
     best = -10 ** 18
     while cma_me.is_running():
@@ -1039,6 +1062,8 @@ def run_cma_me(num_to_evaluate, mutation_power=parsed_toml["CMAMESetting"]["Muta
         cma_me.records[i].to_csv(records+"\\Emitter"+str(i)+".csv")
     cma_me.allRecords.to_csv(records+"\\AllRecords.csv")
 
+    """
+    #to heatmap
     latentMap = [0] * (feature_ranges[1][1]+1)
     for i in range(feature_ranges[1][1]+1):
         latentMap[i] = [0] * (feature_ranges[0][1]+1)
@@ -1064,16 +1089,15 @@ def run_cma_me(num_to_evaluate, mutation_power=parsed_toml["CMAMESetting"]["Muta
             fig=g.get_figure()
             fig.savefig(image_path)
         plt.close('all')
-
+    """
 
 class MapElitesAlgorithm:
 
-    def __init__(self, mutation_power, initial_population, num_to_evaluate, feature_map,failed_map):
+    def __init__(self, mutation_power, initial_population, num_to_evaluate, feature_map):
         self.num_to_evaluate = num_to_evaluate
         self.initial_population = initial_population
         self.individuals_evaluated = 0
         self.feature_map = feature_map
-        self.failed_map=failed_map
         self.mutation_power = mutation_power
         self.allRecords=pd.DataFrame(columns=['emitterName','latentVector', 'completionPercentage','jumpActionsPerformed','killsTotal','livesLeft','coinsCollected','remainingTime (20-timeSpent)','behavior feature X','behavior feature Y'])
         
@@ -1108,18 +1132,17 @@ class MapElitesAlgorithm:
         ind.make_features() #now this does nothing
         ind.ID = self.individuals_evaluated
         self.individuals_evaluated += 1
-        if  ind.fitness<1.0:
-            self.failed_map.add(ind)
-        else:
-            self.feature_map.add(ind)
+        self.feature_map.add(ind)
         self.allRecords.loc[ind.ID]=["MAP-Elite"]+[ind.param_vector]+ind.statsList+[ind.features[0]]+[ind.features[1]]
 
         print("Evaluated One Individual")
         #sys.stdout.flush()
 
-         # Visualize this generation
+        
+        # Visualize this generation
         RecordFrequency=parsed_toml["RecordFrequency"]
         if self.individuals_evaluated % RecordFrequency == 0:
+            """
             #show the map of success levels
             image_path = os.path.join(success_map, 'gen_{0:03d}.png'.format(self.individuals_evaluated // RecordFrequency))
             elites = [self.feature_map.elite_map[x] for x in self.feature_map.elite_map]
@@ -1127,14 +1150,8 @@ class MapElitesAlgorithm:
                 pts = make_record_frame([x.features+(x.fitness,) for x in elites])
                 #print(image_path, len(elites) / (self.feature_map.resolutions[-1] ** 2), total_fitness)
                 create_image(pts, image_path)
-
-            #show the map of failed levels
-            image_path = os.path.join(fail_map, 'gen_{0:03d}.png'.format(self.individuals_evaluated // RecordFrequency))
-            elites = [self.failed_map.elite_map[x] for x in self.failed_map.elite_map]
-            if(len(elites)!=0):
-                pts = make_record_frame([x.features+(x.fitness,) for x in elites])
-                #print(image_path, len(elites) / (self.feature_map.resolutions[-1] ** 2), total_fitness)
-                create_image(pts, image_path)
+            """
+        
 
             elites = [self.feature_map.elite_map[x] for x in self.feature_map.elite_map]
             if(len(elites)!=0):
@@ -1142,7 +1159,7 @@ class MapElitesAlgorithm:
                 rowData=[]
                 for x in elites:
                     currElite=[x.ID]
-                    currElite+=self.allRecords.loc[x.ID,["emitterName","jumpActionsPerformed","behavior feature X","behavior feature Y"]].tolist()
+                    currElite+=self.allRecords.loc[x.ID,["emitterName",'completionPercentage',"behavior feature X","behavior feature Y"]].tolist()
                     rowData.append(currElite)
                 wr = csv.writer(logFile, dialect='excel')
                 wr.writerow(rowData)
@@ -1155,12 +1172,12 @@ def run_map_elites(num_to_evaluate, initial_population, mutation_power=parsed_to
     #feature_ranges = [(-(num_params*boundary_value//2), num_params*boundary_value//2)] * 2
     feature_ranges=[(parsed_toml["CMAMESetting"]["X_Low"],parsed_toml["CMAMESetting"]["X_High"]),(parsed_toml["CMAMESetting"]["Y_Low"],parsed_toml["CMAMESetting"]["Y_High"])]
     feature_map = FeatureMap(num_to_evaluate, feature_ranges, resolution)
-    failed_map=FeatureMap(num_to_evaluate, feature_ranges, resolution)
+    
 
     me = MapElitesAlgorithm(mutation_power, 
                             initial_population, 
                             num_to_evaluate, 
-                            feature_map,failed_map)
+                            feature_map)
 
     best = -10 ** 18
     while me.is_running():
@@ -1171,6 +1188,7 @@ def run_map_elites(num_to_evaluate, initial_population, mutation_power=parsed_to
         me.return_evaluated_individual(ind)
     me.allRecords.to_csv("records\\AllRecords.csv")
 
+    """
     #To HeatMap
     latentMap = [0] * (feature_ranges[1][1]+1)
     for i in range(feature_ranges[1][1]+1):
@@ -1197,16 +1215,16 @@ def run_map_elites(num_to_evaluate, initial_population, mutation_power=parsed_to
             fig=g.get_figure()
             fig.savefig(image_path)
         plt.close('all')
+    """
 
 
 class ISOLineDDAlgorithm:
 
-    def __init__(self, mutation_power1,mutation_power2, initial_population, num_to_evaluate, feature_map,failed_map):
+    def __init__(self, mutation_power1,mutation_power2, initial_population, num_to_evaluate, feature_map):
         self.num_to_evaluate = num_to_evaluate
         self.initial_population = initial_population
         self.individuals_evaluated = 0
         self.feature_map = feature_map
-        self.failed_map=failed_map
         self.mutation_power1 = mutation_power1
         self.mutation_power2=mutation_power2
         self.allRecords=pd.DataFrame(columns=['emitterName','latentVector', 'completionPercentage','jumpActionsPerformed','killsTotal','livesLeft','coinsCollected','remainingTime (20-timeSpent)','behavior feature X','behavior feature Y'])
@@ -1217,7 +1235,7 @@ class ISOLineDDAlgorithm:
     def generate_individual(self):
         
         ind = Individual()
-        if self.individuals_evaluated < self.initial_population or len(self.feature_map.elite_indices)<2:
+        if self.individuals_evaluated < self.initial_population:
             unscaled_params = \
                 [np.random.uniform(low=-boundary_value, high=boundary_value) for _ in range(num_params)]
             ind.param_vector = unscaled_params
@@ -1226,9 +1244,6 @@ class ISOLineDDAlgorithm:
             index1 = self.feature_map.elite_indices[pos]
             pos = random.randint(0, len(self.feature_map.elite_indices)-1)
             index2 = self.feature_map.elite_indices[pos]
-            while(index2==index1):
-                pos = random.randint(0, len(self.feature_map.elite_indices)-1)
-                index2 = self.feature_map.elite_indices[pos]
             
             parent1=self.feature_map.elite_map[index1]
             parent2=self.feature_map.elite_map[index2]
@@ -1252,18 +1267,18 @@ class ISOLineDDAlgorithm:
         ind.make_features() #now this does nothing
         ind.ID = self.individuals_evaluated
         self.individuals_evaluated += 1
-        if  ind.fitness<1.0:
-            self.failed_map.add(ind)
-        else:
-            self.feature_map.add(ind)
+        
+        self.feature_map.add(ind)
         self.allRecords.loc[ind.ID]=["MAP-Elite"]+[ind.param_vector]+ind.statsList+[ind.features[0]]+[ind.features[1]]
 
         print("Evaluated One Individual")
         #sys.stdout.flush()
 
+        
          # Visualize this generation
         RecordFrequency=parsed_toml["RecordFrequency"]
         if self.individuals_evaluated % RecordFrequency == 0:
+            """
             #show the map of success levels
             image_path = os.path.join(success_map, 'gen_{0:03d}.png'.format(self.individuals_evaluated // RecordFrequency))
             elites = [self.feature_map.elite_map[x] for x in self.feature_map.elite_map]
@@ -1271,14 +1286,8 @@ class ISOLineDDAlgorithm:
                 pts = make_record_frame([x.features+(x.fitness,) for x in elites])
                 #print(image_path, len(elites) / (self.feature_map.resolutions[-1] ** 2), total_fitness)
                 create_image(pts, image_path)
-
-            #show the map of failed levels
-            image_path = os.path.join(fail_map, 'gen_{0:03d}.png'.format(self.individuals_evaluated // RecordFrequency))
-            elites = [self.failed_map.elite_map[x] for x in self.failed_map.elite_map]
-            if(len(elites)!=0):
-                pts = make_record_frame([x.features+(x.fitness,) for x in elites])
-                #print(image_path, len(elites) / (self.feature_map.resolutions[-1] ** 2), total_fitness)
-                create_image(pts, image_path)
+            """
+        
 
             elites = [self.feature_map.elite_map[x] for x in self.feature_map.elite_map]
             if(len(elites)!=0):
@@ -1286,7 +1295,7 @@ class ISOLineDDAlgorithm:
                 rowData=[]
                 for x in elites:
                     currElite=[x.ID]
-                    currElite+=self.allRecords.loc[x.ID,["emitterName","jumpActionsPerformed","behavior feature X","behavior feature Y"]].tolist()
+                    currElite+=self.allRecords.loc[x.ID,["emitterName",'completionPercentage',"behavior feature X","behavior feature Y"]].tolist()
                     rowData.append(currElite)
                 wr = csv.writer(logFile, dialect='excel')
                 wr.writerow(rowData)
@@ -1299,13 +1308,13 @@ def run_ISOLineDD(num_to_evaluate, initial_population, mutation_power1,mutation_
     #feature_ranges = [(-(num_params*boundary_value//2), num_params*boundary_value//2)] * 2
     feature_ranges=[(parsed_toml["CMAMESetting"]["X_Low"],parsed_toml["CMAMESetting"]["X_High"]),(parsed_toml["CMAMESetting"]["Y_Low"],parsed_toml["CMAMESetting"]["Y_High"])]
     feature_map = FeatureMap(num_to_evaluate, feature_ranges, resolution)
-    failed_map=FeatureMap(num_to_evaluate, feature_ranges, resolution)
+    
 
     me = ISOLineDDAlgorithm(mutation_power1,
                             mutation_power2,
                             initial_population, 
                             num_to_evaluate, 
-                            feature_map,failed_map)
+                            feature_map)
 
     best = -10 ** 18
     while me.is_running():
@@ -1316,6 +1325,8 @@ def run_ISOLineDD(num_to_evaluate, initial_population, mutation_power1,mutation_
         me.return_evaluated_individual(ind)
     me.allRecords.to_csv("records\\AllRecords.csv")
 
+
+    """
     #To HeatMap
     latentMap = [0] * (feature_ranges[1][1]+1)
     for i in range(feature_ranges[1][1]+1):
@@ -1342,6 +1353,7 @@ def run_ISOLineDD(num_to_evaluate, initial_population, mutation_power1,mutation_
             fig=g.get_figure()
             fig.savefig(image_path)
         plt.close('all')
+    """
     
     #print(best)
 
