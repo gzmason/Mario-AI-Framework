@@ -344,8 +344,7 @@ class CMA_ES_Algorithm:
             return
 
         for cur in self.population:
-            if(cur.fitness==1.0):
-                self.feature_map.add(cur)
+            self.feature_map.add(cur)
 
         # Sort by fitness
         parents = sorted(self.population, key=lambda x: x.fitness)[::-1]
@@ -573,11 +572,8 @@ class ImprovementEmitter:
         # Only filter by this generation
         parents = []
         for cur in self.population:
-            if(cur.fitness<1.0):
-                self.population.remove(cur)
-            else:
-                if self.feature_map.add(cur):
-                    parents.append(cur)
+            if self.feature_map.add(cur):
+                parents.append(cur)
         num_parents = len(parents)
         needs_restart = num_parents == 0
 
@@ -725,13 +721,10 @@ class RandomDirectionEmitter:
         local_map = self.feature_map.clone_blank()
         parents = []
         for cur in self.population:
-            if(cur.fitness<1.0):
-                self.population.remove(cur)
-            else:
-                local_map.add(cur)
-                if self.feature_map.add(cur):
-                    did_improve = True
-                    num_improve += 1
+            local_map.add(cur)
+            if self.feature_map.add(cur):
+                did_improve = True
+                num_improve += 1
         for index in local_map.elite_indices:
             parents.append(local_map.elite_map[index])
         num_parents = len(parents)
@@ -886,11 +879,8 @@ class OptimizingEmitter:
 
         # Continue optimizing if we are improving the map.
         did_improve = True
-        for cur in self.population:
-            if(cur.fitness<1.0):        
-                self.population.remove(cur) #don't let failed levels affect distribution
-            else:
-                self.feature_map.add(cur)
+        for cur in self.population:    
+            self.feature_map.add(cur)
         needs_restart = not did_improve
 
         # Only update if there are parents
