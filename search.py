@@ -105,7 +105,7 @@ def gan_generate(x):
     num_enemies =  len (im[im == ENEMY])
     num_non_empty=len(higher[higher!=EMPTY])
     #num_non_empty=num_non_empty/2 #range for each cell in x axis is 2
-    return json.dumps(im[0].tolist()),num_non_empty,num_enemies
+    return json.dumps(im[0].tolist())#,num_non_empty,num_enemies
 
 def get_char(x):
     return {
@@ -173,10 +173,33 @@ def eval_mario(ind):
     #messageReceived=sys.stdin.readline()
     statsList=messageReceived.split(',')
     ind.statsList=statsList
+    featureX=get_featureX(ind,result)
+    featureY=get_featureY(ind,result)
+    ind.features=(featureX,featureY)
     completion_percentage=float(statsList[0])
     return completion_percentage
 
 evaluate = eval_mario
+
+def Higher_Level_Non_Empty_Blocks(ind,result):
+    im=np.array(json.loads(ind.level))
+    higher=im[0:HigherLevel,:]
+    num_non_empty=len(higher[higher!=EMPTY])
+    #num_non_empty=len(im[im!=EMPTY])
+    return num_non_empty
+
+def Num_Enemies(ind,result):
+    im=np.array(json.loads(ind.level))
+    num_enemies =  len (im[np.isin(im,ENEMY)])
+    return num_enemies
+
+get_featureX=parsed_toml["featureX"]
+get_featureY=parsed_toml["featureY"]
+possibles=globals().copy()
+get_featureX=possibles.get(get_featureX)
+get_featureY=possibles.get(get_featureY)
+#get_featureX=Higher_Level_Non_Empty_Blocks
+#get_featureY=Num_Enemies
 
 def gaussian():
     u1 = 1.0 - random.random()
@@ -303,9 +326,10 @@ class CMA_ES_Algorithm:
         unscaled_params = self.mean + np.array(unscaled_params)
         ind = Individual()
         ind.param_vector = unscaled_params
-        level,num_non_empty,num_enemies=gan_generate(ind.param_vector)
+        #level,num_non_empty,num_enemies=gan_generate(ind.param_vector)
+        level=gan_generate(ind.param_vector)
         ind.level=level
-        ind.features = (num_non_empty, num_enemies)
+        #ind.features = (num_non_empty, num_enemies)
         return ind
     
     def return_evaluated_individual(self, ind):
@@ -551,7 +575,8 @@ class ImprovementEmitter:
         ind = Individual()
         ind.param_vector = unscaled_params
         #print(ind.param_vector)
-        level,num_non_empty,num_enemies=gan_generate(ind.param_vector)
+        #level,num_non_empty,num_enemies=gan_generate(ind.param_vector)
+        level=gan_generate(ind.param_vector)
         ind.level=level
         #print(level)
         #sys.stdout.flush()
@@ -559,7 +584,7 @@ class ImprovementEmitter:
 
         #half = len(ind.param_vector) // 2
         #capped_vals = [ind.reduce(x) for x in ind.param_vector]
-        ind.features = (num_non_empty, num_enemies)
+        #ind.features = (num_non_empty, num_enemies)
         self.num_released += 1
         return ind
 
@@ -698,7 +723,8 @@ class RandomDirectionEmitter:
         ind = Individual()
         ind.param_vector = unscaled_params
         self.num_released += 1
-        level,num_non_empty,num_enemies=gan_generate(ind.param_vector)
+        #level,num_non_empty,num_enemies=gan_generate(ind.param_vector)
+        level=gan_generate(ind.param_vector)
         ind.level=level
         #print(level)
         #sys.stdout.flush()
@@ -706,7 +732,7 @@ class RandomDirectionEmitter:
 
         #half = len(ind.param_vector) // 2
         #capped_vals = [ind.reduce(x) for x in ind.param_vector]
-        ind.features = (num_non_empty, num_enemies)
+        #ind.features = (num_non_empty, num_enemies)
         return ind
 
     def return_evaluated_individual(self, ind):
@@ -860,14 +886,15 @@ class OptimizingEmitter:
         ind.emitter_name="OptimizingEmitter"
         self.num_released += 1
 
-        level,num_non_empty,num_enemies=gan_generate(ind.param_vector)
+        #level,num_non_empty,num_enemies=gan_generate(ind.param_vector)
+        level=gan_generate(ind.param_vector)
         ind.level=level
         #print(level)
         #sys.stdout.flush()
 
         #half = len(ind.param_vector) // 2
         #capped_vals = [ind.reduce(x) for x in ind.param_vector]
-        ind.features = (num_non_empty, num_enemies)
+        #ind.features = (num_non_empty, num_enemies)
 
         return ind
 
@@ -1107,14 +1134,15 @@ class MapElitesAlgorithm:
                 [parent.param_vector[i] + self.mutation_power * gaussian() for i in range(num_params)]
             ind.param_vector = unscaled_params
 
-        level,num_non_empty,num_enemies=gan_generate(ind.param_vector)
+        #level,num_non_empty,num_enemies=gan_generate(ind.param_vector)
+        level=gan_generate(ind.param_vector)
         ind.level=level
         #print(level)
         #sys.stdout.flush()
 
         #half = len(ind.param_vector) // 2
         #capped_vals = [ind.reduce(x) for x in ind.param_vector]
-        ind.features = (num_non_empty, num_enemies)
+        #ind.features = (num_non_empty, num_enemies)
         return ind
 
     def return_evaluated_individual(self, ind):
@@ -1242,14 +1270,15 @@ class ISOLineDDAlgorithm:
                 [parent1.param_vector[i] + self.mutation_power1 * gaussian() + self.mutation_power2 * (parent1.param_vector[i]-parent2.param_vector[i]) * gaussian() for i in range(num_params)]
             ind.param_vector = unscaled_params
 
-        level,num_non_empty,num_enemies=gan_generate(ind.param_vector)
+        #level,num_non_empty,num_enemies=gan_generate(ind.param_vector)
+        level=gan_generate(ind.param_vector)
         ind.level=level
         #print(level)
         #sys.stdout.flush()
 
         #half = len(ind.param_vector) // 2
         #capped_vals = [ind.reduce(x) for x in ind.param_vector]
-        ind.features = (num_non_empty, num_enemies)
+        #ind.features = (num_non_empty, num_enemies)
         return ind
 
     def return_evaluated_individual(self, ind):
