@@ -1,4 +1,4 @@
-##To Change BCs:
+# To Change BCs:
 (1) In search.py, before line 196, add:
 def New_BC (ind,result):
   #how to get the BC
@@ -10,8 +10,8 @@ def New_BC (ind,result):
  
  
 
-##To Train GAN:
+# To Train GAN:
 src/GANTraining/main.py
 
-##To Run CMA-ES/CMA-ME/MAP-ELITE on trained GAN:
+# To Run CMA-ES/CMA-ME/MAP-ELITE on trained GAN:
 search.py
