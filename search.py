@@ -193,6 +193,9 @@ def Num_Enemies(ind,result):
     num_enemies =  len (im[np.isin(im,ENEMY)])
     return num_enemies
 
+def Coins_Collected(ind,result):
+    return result.getNumCollectedTileCoins()
+
 get_featureX=parsed_toml["featureX"]
 get_featureY=parsed_toml["featureY"]
 possibles=globals().copy()
